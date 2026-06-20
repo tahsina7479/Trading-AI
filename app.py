@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -6,8 +7,12 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU FOREX AI DASHBOARD V2")
+st.title("🚀 MITU TRADE AI DASHBOARD V2")
 st.write("Real market scanner for Forex, Gold, Silver, Crypto")
+refresh_seconds = st.selectbox("Auto Refresh", [0, 30, 60, 300], index=2)
+
+if st.button("🔄 Refresh Now"):
+    st.rerun()
 
 symbols = symbols = [
     # Forex
@@ -38,7 +43,7 @@ results = []
 
 with st.spinner("Scanning market..."):
     for symbol in symbols:
-        data = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        data = yf.download(symbol, period="5d", interval="5m", progress=False)
         close = data["Close"].squeeze()
 
         rsi = RSIIndicator(close, window=14).rsi()
@@ -124,12 +129,47 @@ with st.spinner("Scanning market..."):
         })
 
 df = pd.DataFrame(results)
+
+df = df.sort_values(by="Score", ascending=False)
+
+best_trade = df.iloc[0]
+
+st.success(
+    f"🔥 BEST TRADE NOW: {best_trade['Pair']} | "
+    f"{best_trade['Signal']} | "
+    f"Score: {best_trade['Score']}"
+)
 df = df.sort_values(by="Score", ascending=False)
 
 st.subheader("📊 Market Scanner Results")
+st.button("Refresh Market Data")
+df["Stop Loss"] = df["Stop Loss"].astype(str)
+df["Take Profit"] = df["Take Profit"].astype(str)
+df["Entry"] = df["Entry"].astype(str)
 st.dataframe(df, use_container_width=True)
 
 st.subheader("🏆 Top 3 Opportunities")
 st.table(df.head(3))
 
 st.warning("Paper trading only. Do not use real money yet.")
+st.header("📒 Trade Journal")
+
+try:
+    journal = pd.read_csv("trade_journal.csv")
+
+    st.dataframe(journal)
+
+    total_trades = len(journal)
+
+    total_profit = journal["ProfitLoss"].sum()
+
+    wins = len(journal[journal["ProfitLoss"] > 0])
+
+    win_rate = round((wins / total_trades) * 100, 2)
+
+    st.metric("Total Trades", total_trades)
+    st.metric("Win Rate %", win_rate)
+    st.metric("Total Profit", total_profit)
+
+except:
+    st.warning("No trade journal found yet.")
