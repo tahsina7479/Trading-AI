@@ -1,3 +1,6 @@
+import os
+from datetime import datetime
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -6,8 +9,8 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU TRADE AI DASHBOARD V5")
-st.write("Paper trading scanner with Probability %, AI Grade, Market Filter")
+st.title("🚀 MITU TRADE AI DASHBOARD V6")
+st.write("Paper trading AI scanner with journal save button, risk level, probability, and AI grade")
 
 asset_type = st.selectbox(
     "Choose Market",
@@ -90,11 +93,8 @@ with st.spinner("Scanning market..."):
                 score += 10
 
             score = min(score, 100)
-
             probability = round((score * 0.8) + 10, 1)
-
-            if probability > 95:
-                probability = 95
+            probability = min(probability, 95)
 
             if score >= 85:
                 signal = "STRONG BUY"
@@ -123,17 +123,29 @@ with st.spinner("Scanning market..."):
             else:
                 ai_grade = "D"
 
+            if latest_rsi > 70:
+                risk_level = "High"
+            elif score >= 85 and 45 <= latest_rsi <= 65:
+                risk_level = "Low"
+            elif score >= 70:
+                risk_level = "Medium"
+            else:
+                risk_level = "High"
+
             if "BUY" in signal:
+                trade_type = "BUY"
                 entry = price
                 stop_loss = price * 0.99
                 take_profit = price * 1.02
                 risk_reward = "1:2"
             elif "SELL" in signal:
+                trade_type = "SELL"
                 entry = price
                 stop_loss = price * 1.01
                 take_profit = price * 0.98
                 risk_reward = "1:2"
             else:
+                trade_type = "WAIT"
                 entry = price
                 stop_loss = "N/A"
                 take_profit = "N/A"
@@ -170,10 +182,12 @@ with st.spinner("Scanning market..."):
                 "Trend": trend,
                 "MACD": macd_status,
                 "Signal": signal,
+                "Type": trade_type,
                 "Confidence": confidence,
                 "Score": score,
                 "Probability %": probability,
                 "AI Grade": ai_grade,
+                "Risk Level": risk_level,
                 "Entry": round(entry, 5),
                 "Stop Loss": round(stop_loss, 5) if stop_loss != "N/A" else "N/A",
                 "Take Profit": round(take_profit, 5) if take_profit != "N/A" else "N/A",
@@ -212,7 +226,8 @@ st.success(
     f"{best_trade['Signal']} | "
     f"Score: {best_trade['Score']} | "
     f"Probability: {best_trade['Probability %']}% | "
-    f"Grade: {best_trade['AI Grade']}"
+    f"Grade: {best_trade['AI Grade']} | "
+    f"Risk: {best_trade['Risk Level']}"
 )
 
 st.subheader("🏆 Top 3 Opportunities")
@@ -223,6 +238,7 @@ for _, row in df.head(3).iterrows():
         f"Score: {row['Score']} | "
         f"Probability: {row['Probability %']}% | "
         f"Grade: {row['AI Grade']} | "
+        f"Risk: {row['Risk Level']} | "
         f"Entry: {row['Entry']} | "
         f"SL: {row['Stop Loss']} | "
         f"TP: {row['Take Profit']}"
@@ -236,6 +252,38 @@ for _, row in df.head(3).iterrows():
         st.info("🔵 " + message)
     else:
         st.error("🔴 " + message)
+
+st.subheader("💾 Save Best Trade to Journal")
+
+if st.button("Save Best Trade"):
+    journal_file = "trade_journal.csv"
+
+    new_trade = pd.DataFrame([{
+        "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Pair": best_trade["Pair"],
+        "Type": best_trade["Type"],
+        "Entry": best_trade["Entry"],
+        "Stop Loss": best_trade["Stop Loss"],
+        "Take Profit": best_trade["Take Profit"],
+        "Signal": best_trade["Signal"],
+        "Score": best_trade["Score"],
+        "Probability %": best_trade["Probability %"],
+        "AI Grade": best_trade["AI Grade"],
+        "Risk Level": best_trade["Risk Level"],
+        "Exit": "",
+        "ProfitLoss": 0,
+        "Status": "OPEN",
+        "Reason": best_trade["Reason"]
+    }])
+
+    if os.path.exists(journal_file):
+        old_journal = pd.read_csv(journal_file)
+        updated_journal = pd.concat([old_journal, new_trade], ignore_index=True)
+    else:
+        updated_journal = new_trade
+
+    updated_journal.to_csv(journal_file, index=False)
+    st.success("Trade saved to journal ✅")
 
 strong_buy_count = len(df[df["Signal"] == "STRONG BUY"])
 buy_watch_count = len(df[df["Signal"] == "BUY WATCH"])
@@ -290,9 +338,16 @@ try:
     st.dataframe(journal, use_container_width=True)
 
     total_journal_trades = len(journal)
-    total_profit = journal["ProfitLoss"].sum()
-    journal_wins = len(journal[journal["ProfitLoss"] > 0])
-    journal_win_rate = round((journal_wins / total_journal_trades) * 100, 2) if total_journal_trades > 0 else 0
+
+    closed_journal = journal[journal["Status"] == "CLOSED"] if "Status" in journal.columns else journal
+
+    if "ProfitLoss" in journal.columns:
+        total_profit = journal["ProfitLoss"].sum()
+        journal_wins = len(journal[journal["ProfitLoss"] > 0])
+        journal_win_rate = round((journal_wins / total_journal_trades) * 100, 2) if total_journal_trades > 0 else 0
+    else:
+        total_profit = 0
+        journal_win_rate = 0
 
     st.metric("Journal Total Trades", total_journal_trades)
     st.metric("Journal Win Rate %", journal_win_rate)
