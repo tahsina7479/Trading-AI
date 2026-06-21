@@ -11,8 +11,13 @@ st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
 JOURNAL_FILE = "trade_journal.csv"
 
-st.title("🚀 MITU TRADE AI DASHBOARD V8")
-st.write("AI scanner with real open/close trade tracker and closed-trade win rate")
+st.title("🚀 MITU TRADE AI DASHBOARD V9")
+st.write("AI scanner with risk manager, position size calculator, journal, and backtest score")
+
+account_balance = st.number_input("Account Balance ($)", min_value=10.0, value=1000.0, step=100.0)
+risk_percent = st.number_input("Risk Per Trade (%)", min_value=0.1, max_value=10.0, value=2.0, step=0.5)
+
+risk_amount = round(account_balance * (risk_percent / 100), 2)
 
 asset_type = st.selectbox(
     "Choose Market",
@@ -155,6 +160,24 @@ with st.spinner("Scanning market..."):
                 take_profit = "N/A"
                 risk_reward = "N/A"
 
+            if stop_loss != "N/A":
+                risk_per_unit = abs(entry - stop_loss)
+                position_size = round(risk_amount / risk_per_unit, 4) if risk_per_unit > 0 else 0
+                position_value = round(position_size * entry, 2)
+            else:
+                risk_per_unit = 0
+                position_size = 0
+                position_value = 0
+
+            if symbol.endswith("=X"):
+                position_note = "Forex units estimate"
+            elif symbol in ["BTC-USD", "ETH-USD"]:
+                position_note = "Crypto coin amount"
+            elif symbol in ["GC=F", "SI=F"]:
+                position_note = "Commodity units estimate"
+            else:
+                position_note = "Stock shares estimate"
+
             reason = ""
 
             if trend == "UPTREND":
@@ -196,6 +219,10 @@ with st.spinner("Scanning market..."):
                 "Stop Loss": round(stop_loss, 5) if stop_loss != "N/A" else "N/A",
                 "Take Profit": round(take_profit, 5) if take_profit != "N/A" else "N/A",
                 "Risk/Reward": risk_reward,
+                "Risk Amount $": risk_amount,
+                "Position Size": position_size,
+                "Position Value $": position_value,
+                "Position Note": position_note,
                 "Reason": reason
             })
 
@@ -254,13 +281,28 @@ if df.empty:
 df = df.sort_values(by=["Score", "Probability %"], ascending=False)
 best_trade = df.iloc[0]
 
+st.subheader("🔥 Professional Best Trade Card")
+
 st.success(
-    f"🔥 BEST TRADE NOW: {best_trade['Pair']} | "
-    f"{best_trade['Signal']} | "
-    f"Score: {best_trade['Score']} | "
-    f"Probability: {best_trade['Probability %']}% | "
-    f"Grade: {best_trade['AI Grade']} | "
-    f"Risk: {best_trade['Risk Level']}"
+    f"""
+BEST TRADE NOW: {best_trade['Pair']}
+
+Signal: {best_trade['Signal']}  
+Type: {best_trade['Type']}  
+Score: {best_trade['Score']}  
+Probability: {best_trade['Probability %']}%  
+AI Grade: {best_trade['AI Grade']}  
+Risk Level: {best_trade['Risk Level']}  
+
+Entry: {best_trade['Entry']}  
+Stop Loss: {best_trade['Stop Loss']}  
+Take Profit: {best_trade['Take Profit']}  
+Risk/Reward: {best_trade['Risk/Reward']}  
+
+Risk Amount: ${best_trade['Risk Amount $']}  
+Position Size: {best_trade['Position Size']}  
+Position Value: ${best_trade['Position Value $']}  
+"""
 )
 
 st.subheader("🏆 Top 3 Opportunities")
@@ -274,7 +316,8 @@ for _, row in df.head(3).iterrows():
         f"Risk: {row['Risk Level']} | "
         f"Entry: {row['Entry']} | "
         f"SL: {row['Stop Loss']} | "
-        f"TP: {row['Take Profit']}"
+        f"TP: {row['Take Profit']} | "
+        f"Size: {row['Position Size']}"
     )
 
     if row["Score"] >= 85:
@@ -302,6 +345,9 @@ if st.button("Open Best Trade"):
         "Probability %": best_trade["Probability %"],
         "AI Grade": best_trade["AI Grade"],
         "Risk Level": best_trade["Risk Level"],
+        "Risk Amount $": best_trade["Risk Amount $"],
+        "Position Size": best_trade["Position Size"],
+        "Position Value $": best_trade["Position Value $"],
         "Exit": "",
         "ProfitLoss": 0,
         "Status": "OPEN",
@@ -394,6 +440,14 @@ col6.metric("Signal Bias %", signal_bias)
 col7.metric("Best Score", int(df["Score"].max()))
 col8.metric("Best Grade", best_trade["AI Grade"])
 
+st.subheader("💰 Risk Manager")
+
+col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+col_r1.metric("Account Balance", f"${account_balance}")
+col_r2.metric("Risk Per Trade", f"{risk_percent}%")
+col_r3.metric("Risk Amount", f"${risk_amount}")
+col_r4.metric("Best Trade Size", best_trade["Position Size"])
+
 st.subheader("🧠 Market Direction Panel")
 
 bullish_count = len(df[(df["Trend"] == "UPTREND") & (df["MACD"] == "BULLISH")])
@@ -405,21 +459,21 @@ col9.metric("Bullish Markets", bullish_count)
 col10.metric("Bearish Markets", bearish_count)
 col11.metric("Neutral / Mixed", neutral_count)
 
-st.subheader("🧪 Basic Backtest Panel")
+st.subheader("🧪 Basic Backtest Score Panel")
 
 if not backtest_df.empty:
     backtest_trades = backtest_df[backtest_df["Backtest Result"] != "NO TRADE"]
     backtest_total = len(backtest_trades)
     backtest_wins = len(backtest_trades[backtest_trades["Backtest Result"] == "WIN"])
     backtest_losses = len(backtest_trades[backtest_trades["Backtest Result"] == "LOSS"])
-    backtest_accuracy = round((backtest_wins / backtest_total) * 100, 1) if backtest_total > 0 else 0
+    backtest_score = round((backtest_wins / backtest_total) * 100, 1) if backtest_total > 0 else 0
     backtest_profit = backtest_trades["Backtest Profit Point"].sum() if backtest_total > 0 else 0
 
     col12, col13, col14, col15 = st.columns(4)
     col12.metric("Backtest Trades", backtest_total)
     col13.metric("Backtest Wins", backtest_wins)
     col14.metric("Backtest Losses", backtest_losses)
-    col15.metric("Backtest Accuracy %", backtest_accuracy)
+    col15.metric("Backtest Score %", backtest_score)
 
     st.metric("Backtest Profit Points", backtest_profit)
 
