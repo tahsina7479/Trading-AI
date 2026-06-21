@@ -40,6 +40,12 @@ symbols = symbols = [
 
 
 results = []
+st.subheader("🎯 Signal Filter")
+
+selected_signal = st.selectbox(
+    "Choose Signal",
+    ["ALL", "STRONG BUY", "BUY WATCH", "WAIT", "SELL WATCH", "STRONG SELL"]
+)
 
 with st.spinner("Scanning market..."):
     for symbol in symbols:
@@ -129,6 +135,13 @@ with st.spinner("Scanning market..."):
         })
 
 df = pd.DataFrame(results)
+
+if selected_signal != "ALL":
+    df = df[df["Signal"] == selected_signal]
+
+if df.empty:
+    st.warning("No signals found.")
+    st.stop()
 
 df = df.sort_values(by="Score", ascending=False)
 
