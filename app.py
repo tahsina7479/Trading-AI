@@ -153,6 +153,18 @@ st.success(
     f"Score: {best_trade['Score']}"
 )
 df = df.sort_values(by="Score", ascending=False)
+st.subheader("🏆 Top 3 Opportunities")
+
+top3 = df.head(3)
+
+for index, row in top3.iterrows():
+    st.info(
+        f"{row['Pair']} | {row['Signal']} | "
+        f"Score: {row['Score']} | "
+        f"Entry: {row['Entry']} | "
+        f"SL: {row['Stop Loss']} | "
+        f"TP: {row['Take Profit']}"
+    )
 
 st.subheader("📊 Market Scanner Results")
 st.button("Refresh Market Data")
