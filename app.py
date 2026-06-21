@@ -6,13 +6,20 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU TRADE AI DASHBOARD V4")
-st.write("Paper trading scanner for Forex, Gold, Silver, Crypto, and Stocks")
+st.title("🚀 MITU TRADE AI DASHBOARD V5")
+st.write("Paper trading scanner with Probability %, AI Grade, Market Filter")
 
 asset_type = st.selectbox(
     "Choose Market",
     ["ALL", "FOREX", "COMMODITIES", "CRYPTO", "STOCKS"]
 )
+
+selected_signal = st.selectbox(
+    "Choose Signal",
+    ["ALL", "STRONG BUY", "BUY WATCH", "WAIT", "SELL WATCH", "STRONG SELL"]
+)
+
+show_only_top = st.checkbox("Show only strong opportunities", value=False)
 
 market_symbols = {
     "FOREX": ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
@@ -27,11 +34,6 @@ if asset_type == "ALL":
         symbols.extend(group)
 else:
     symbols = market_symbols[asset_type]
-
-selected_signal = st.selectbox(
-    "Choose Signal",
-    ["ALL", "STRONG BUY", "BUY WATCH", "WAIT", "SELL WATCH", "STRONG SELL"]
-)
 
 if st.button("🔄 Refresh Market Data"):
     st.rerun()
@@ -74,14 +76,25 @@ with st.spinner("Scanning market..."):
             if macd_status == "BULLISH":
                 score += 35
 
-            if 45 <= latest_rsi <= 65:
+            if 45 <= latest_rsi <= 60:
                 score += 30
+            elif 60 < latest_rsi <= 65:
+                score += 25
             elif 35 <= latest_rsi < 45:
                 score += 20
             elif 65 < latest_rsi <= 70:
                 score += 15
-            else:
+            elif latest_rsi > 70:
                 score += 5
+            else:
+                score += 10
+
+            score = min(score, 100)
+
+            probability = round((score * 0.8) + 10, 1)
+
+            if probability > 95:
+                probability = 95
 
             if score >= 85:
                 signal = "STRONG BUY"
@@ -98,6 +111,17 @@ with st.spinner("Scanning market..."):
             else:
                 signal = "STRONG SELL"
                 confidence = "High"
+
+            if score >= 90:
+                ai_grade = "A+"
+            elif score >= 80:
+                ai_grade = "A"
+            elif score >= 70:
+                ai_grade = "B"
+            elif score >= 55:
+                ai_grade = "C"
+            else:
+                ai_grade = "D"
 
             if "BUY" in signal:
                 entry = price
@@ -132,6 +156,13 @@ with st.spinner("Scanning market..."):
             else:
                 reason += "RSI overbought caution. "
 
+            if score >= 85:
+                reason += "High quality setup. "
+            elif score >= 70:
+                reason += "Good watch setup. "
+            else:
+                reason += "Weak or neutral setup. "
+
             results.append({
                 "Pair": symbol,
                 "Price": round(price, 5),
@@ -141,6 +172,8 @@ with st.spinner("Scanning market..."):
                 "Signal": signal,
                 "Confidence": confidence,
                 "Score": score,
+                "Probability %": probability,
+                "AI Grade": ai_grade,
                 "Entry": round(entry, 5),
                 "Stop Loss": round(stop_loss, 5) if stop_loss != "N/A" else "N/A",
                 "Take Profit": round(take_profit, 5) if take_profit != "N/A" else "N/A",
@@ -163,18 +196,23 @@ if df.empty:
 if selected_signal != "ALL":
     df = df[df["Signal"] == selected_signal]
 
+if show_only_top:
+    df = df[df["Score"] >= 85]
+
 if df.empty:
     st.warning("No signals found for this filter.")
     st.stop()
 
-df = df.sort_values(by="Score", ascending=False)
+df = df.sort_values(by=["Score", "Probability %"], ascending=False)
 
 best_trade = df.iloc[0]
 
 st.success(
     f"🔥 BEST TRADE NOW: {best_trade['Pair']} | "
     f"{best_trade['Signal']} | "
-    f"Score: {best_trade['Score']}"
+    f"Score: {best_trade['Score']} | "
+    f"Probability: {best_trade['Probability %']}% | "
+    f"Grade: {best_trade['AI Grade']}"
 )
 
 st.subheader("🏆 Top 3 Opportunities")
@@ -183,6 +221,8 @@ for _, row in df.head(3).iterrows():
     message = (
         f"{row['Pair']} | {row['Signal']} | "
         f"Score: {row['Score']} | "
+        f"Probability: {row['Probability %']}% | "
+        f"Grade: {row['AI Grade']} | "
         f"Entry: {row['Entry']} | "
         f"SL: {row['Stop Loss']} | "
         f"TP: {row['Take Profit']}"
@@ -197,17 +237,41 @@ for _, row in df.head(3).iterrows():
     else:
         st.error("🔴 " + message)
 
-wins = len(df[df["Signal"] == "STRONG BUY"])
-losses = len(df[df["Signal"].isin(["SELL WATCH", "STRONG SELL"])])
-total_trades = wins + losses
-win_rate = round((wins / total_trades) * 100, 1) if total_trades > 0 else 0
+strong_buy_count = len(df[df["Signal"] == "STRONG BUY"])
+buy_watch_count = len(df[df["Signal"] == "BUY WATCH"])
+sell_signal_count = len(df[df["Signal"].isin(["SELL WATCH", "STRONG SELL"])])
+total_signal_trades = strong_buy_count + buy_watch_count + sell_signal_count
+
+signal_bias = round(
+    ((strong_buy_count + buy_watch_count) / total_signal_trades) * 100, 1
+) if total_signal_trades > 0 else 0
+
+average_probability = round(df["Probability %"].mean(), 1)
 
 st.subheader("📈 Performance Dashboard")
+
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Signal Trades", total_trades)
-col2.metric("Strong Buy Count", wins)
-col3.metric("Sell Signal Count", losses)
-col4.metric("Signal Bias %", win_rate)
+col1.metric("Signal Trades", total_signal_trades)
+col2.metric("Strong Buy", strong_buy_count)
+col3.metric("Sell Signals", sell_signal_count)
+col4.metric("Avg Probability %", average_probability)
+
+col5, col6, col7, col8 = st.columns(4)
+col5.metric("Buy Watch", buy_watch_count)
+col6.metric("Signal Bias %", signal_bias)
+col7.metric("Best Score", int(df["Score"].max()))
+col8.metric("Best Grade", best_trade["AI Grade"])
+
+st.subheader("🧠 Market Direction Panel")
+
+bullish_count = len(df[(df["Trend"] == "UPTREND") & (df["MACD"] == "BULLISH")])
+bearish_count = len(df[(df["Trend"] == "DOWNTREND") & (df["MACD"] == "BEARISH")])
+neutral_count = len(df) - bullish_count - bearish_count
+
+col9, col10, col11 = st.columns(3)
+col9.metric("Bullish Markets", bullish_count)
+col10.metric("Bearish Markets", bearish_count)
+col11.metric("Neutral / Mixed", neutral_count)
 
 st.subheader("📊 Market Scanner Results")
 
