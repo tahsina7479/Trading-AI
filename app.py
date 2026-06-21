@@ -119,7 +119,21 @@ with st.spinner("Scanning market..."):
             take_profit = None
             risk_reward = "N/A"
 
-        results.append({
+        reason = ""
+
+if trend == "UPTREND":
+    reason += "EMA trend bullish. "
+
+if macd_status == "BULLISH":
+    reason += "MACD bullish. "
+
+if latest_rsi < 70:
+    reason += "RSI not overbought. "
+
+if latest_rsi > 70:
+    reason += "RSI overbought caution. "    
+
+results.append({
             "Pair": symbol,
             "Price": round(price, 5),
             "RSI": round(latest_rsi, 2),
@@ -131,7 +145,8 @@ with st.spinner("Scanning market..."):
             "Entry": round(entry, 5),
             "Stop Loss": round(stop_loss, 5) if stop_loss else "N/A",
             "Take Profit": round(take_profit, 5) if take_profit else "N/A",
-            "Risk/Reward": risk_reward
+            "Risk/Reward": risk_reward,
+            "Reason": reason
         })
 
 df = pd.DataFrame(results)
@@ -194,7 +209,12 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Trades", total_trades)
 col2.metric("Wins", wins)
 col3.metric("Losses", losses)
-col4.metric("Win Rate %", win_rate)    
+col4.metric("Win Rate %", win_rate)  
+st.subheader("📒 Trade Journal")
+
+journal = pd.read_csv("trade_journal.csv")
+
+st.dataframe(journal, use_container_width=True)  
 
 st.subheader("📊 Market Scanner Results")
 st.button("Refresh Market Data")
@@ -207,7 +227,7 @@ st.subheader("🏆 Top 3 Opportunities")
 st.table(df.head(3))
 
 st.warning("Paper trading only. Do not use real money yet.")
-st.header("📒 Trade Journal")
+
 
 try:
     journal = pd.read_csv("trade_journal.csv")
