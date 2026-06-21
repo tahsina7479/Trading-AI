@@ -158,13 +158,43 @@ st.subheader("🏆 Top 3 Opportunities")
 top3 = df.head(3)
 
 for index, row in top3.iterrows():
-    st.info(
+
+    message = (
         f"{row['Pair']} | {row['Signal']} | "
         f"Score: {row['Score']} | "
         f"Entry: {row['Entry']} | "
         f"SL: {row['Stop Loss']} | "
         f"TP: {row['Take Profit']}"
     )
+
+    if row["Score"] >= 90:
+        st.success("🟢 " + message)
+
+    elif row["Score"] >= 80:
+        st.info("🔵 " + message)
+
+    elif row["Score"] >= 70:
+        st.warning("🟡 " + message)
+
+    else:
+        st.error("🔴 " + message)
+    wins = len(df[df["Signal"] == "STRONG BUY"])
+losses = len(df[df["Signal"] == "STRONG SELL"])
+total_trades = wins + losses
+
+if total_trades > 0:
+    win_rate = round((wins / total_trades) * 100, 1)
+else:
+    win_rate = 0
+
+st.subheader("📈 Performance Dashboard")
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("Total Trades", total_trades)
+col2.metric("Wins", wins)
+col3.metric("Losses", losses)
+col4.metric("Win Rate %", win_rate)    
 
 st.subheader("📊 Market Scanner Results")
 st.button("Refresh Market Data")
