@@ -9,8 +9,10 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU TRADE AI DASHBOARD V7")
-st.write("Paper trading AI scanner with journal, risk, probability, AI grade, and basic backtest")
+JOURNAL_FILE = "trade_journal.csv"
+
+st.title("🚀 MITU TRADE AI DASHBOARD V8")
+st.write("AI scanner with real open/close trade tracker and closed-trade win rate")
 
 asset_type = st.selectbox(
     "Choose Market",
@@ -250,7 +252,6 @@ if df.empty:
     st.stop()
 
 df = df.sort_values(by=["Score", "Probability %"], ascending=False)
-
 best_trade = df.iloc[0]
 
 st.success(
@@ -285,13 +286,12 @@ for _, row in df.head(3).iterrows():
     else:
         st.error("🔴 " + message)
 
-st.subheader("💾 Save Best Trade to Journal")
+st.subheader("💾 Open Best Trade in Journal")
 
-if st.button("Save Best Trade"):
-    journal_file = "trade_journal.csv"
-
+if st.button("Open Best Trade"):
     new_trade = pd.DataFrame([{
-        "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Open Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Close Date": "",
         "Pair": best_trade["Pair"],
         "Type": best_trade["Type"],
         "Entry": best_trade["Entry"],
@@ -305,17 +305,69 @@ if st.button("Save Best Trade"):
         "Exit": "",
         "ProfitLoss": 0,
         "Status": "OPEN",
+        "Result": "",
         "Reason": best_trade["Reason"]
     }])
 
-    if os.path.exists(journal_file):
-        old_journal = pd.read_csv(journal_file)
+    if os.path.exists(JOURNAL_FILE):
+        old_journal = pd.read_csv(JOURNAL_FILE)
         updated_journal = pd.concat([old_journal, new_trade], ignore_index=True)
     else:
         updated_journal = new_trade
 
-    updated_journal.to_csv(journal_file, index=False)
-    st.success("Trade saved to journal ✅")
+    updated_journal.to_csv(JOURNAL_FILE, index=False)
+    st.success("Best trade opened in journal ✅")
+
+st.subheader("✅ Close Open Trade Manually")
+
+if os.path.exists(JOURNAL_FILE):
+    journal_for_close = pd.read_csv(JOURNAL_FILE)
+
+    if "Status" in journal_for_close.columns:
+        open_trades = journal_for_close[journal_for_close["Status"] == "OPEN"]
+
+        if not open_trades.empty:
+            open_index = st.selectbox(
+                "Choose open trade to close",
+                open_trades.index.tolist()
+            )
+
+            selected_open_trade = journal_for_close.loc[open_index]
+
+            st.write("Selected Trade:")
+            st.write(selected_open_trade)
+
+            exit_price = st.number_input("Exit Price", min_value=0.0, step=0.0001, format="%.5f")
+            close_note = st.text_input("Close Note", "")
+
+            if st.button("Close Selected Trade"):
+                entry_price = float(selected_open_trade["Entry"])
+                trade_type = selected_open_trade["Type"]
+
+                if trade_type == "BUY":
+                    profit_loss = exit_price - entry_price
+                elif trade_type == "SELL":
+                    profit_loss = entry_price - exit_price
+                else:
+                    profit_loss = 0
+
+                result = "WIN" if profit_loss > 0 else "LOSS"
+
+                journal_for_close.loc[open_index, "Exit"] = exit_price
+                journal_for_close.loc[open_index, "ProfitLoss"] = round(profit_loss, 5)
+                journal_for_close.loc[open_index, "Status"] = "CLOSED"
+                journal_for_close.loc[open_index, "Result"] = result
+                journal_for_close.loc[open_index, "Close Date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                journal_for_close.loc[open_index, "Close Note"] = close_note
+
+                journal_for_close.to_csv(JOURNAL_FILE, index=False)
+                st.success("Trade closed and journal updated ✅")
+        else:
+            st.info("No open trades to close.")
+    else:
+        st.info("Old journal format found. Open a new trade first.")
+else:
+    st.info("No journal file yet. Open a trade first.")
 
 strong_buy_count = len(df[df["Signal"] == "STRONG BUY"])
 buy_watch_count = len(df[df["Signal"] == "BUY WATCH"])
@@ -328,7 +380,7 @@ signal_bias = round(
 
 average_probability = round(df["Probability %"].mean(), 1)
 
-st.subheader("📈 Performance Dashboard")
+st.subheader("📈 Signal Dashboard")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Signal Trades", total_signal_trades)
@@ -388,25 +440,44 @@ st.dataframe(df, use_container_width=True)
 
 st.warning("Paper trading only. Do not use real money yet.")
 
-st.subheader("📒 Trade Journal")
+st.subheader("📒 Real Trade Journal")
 
 try:
-    journal = pd.read_csv("trade_journal.csv")
+    journal = pd.read_csv(JOURNAL_FILE)
     st.dataframe(journal, use_container_width=True)
 
     total_journal_trades = len(journal)
 
-    if "ProfitLoss" in journal.columns:
-        total_profit = journal["ProfitLoss"].sum()
-        journal_wins = len(journal[journal["ProfitLoss"] > 0])
-        journal_win_rate = round((journal_wins / total_journal_trades) * 100, 2) if total_journal_trades > 0 else 0
+    if "Status" in journal.columns:
+        open_count = len(journal[journal["Status"] == "OPEN"])
+        closed_journal = journal[journal["Status"] == "CLOSED"]
+    else:
+        open_count = 0
+        closed_journal = journal
+
+    closed_count = len(closed_journal)
+
+    if closed_count > 0 and "ProfitLoss" in closed_journal.columns:
+        total_profit = closed_journal["ProfitLoss"].sum()
+        journal_wins = len(closed_journal[closed_journal["ProfitLoss"] > 0])
+        journal_losses = len(closed_journal[closed_journal["ProfitLoss"] <= 0])
+        journal_win_rate = round((journal_wins / closed_count) * 100, 2)
     else:
         total_profit = 0
+        journal_wins = 0
+        journal_losses = 0
         journal_win_rate = 0
 
-    st.metric("Journal Total Trades", total_journal_trades)
-    st.metric("Journal Win Rate %", journal_win_rate)
-    st.metric("Journal Total Profit", total_profit)
+    col16, col17, col18, col19 = st.columns(4)
+    col16.metric("Total Journal Trades", total_journal_trades)
+    col17.metric("Open Trades", open_count)
+    col18.metric("Closed Trades", closed_count)
+    col19.metric("Real Win Rate %", journal_win_rate)
+
+    col20, col21, col22 = st.columns(3)
+    col20.metric("Real Wins", journal_wins)
+    col21.metric("Real Losses", journal_losses)
+    col22.metric("Real Total Profit", round(total_profit, 5))
 
 except:
     st.warning("No trade journal found yet.")
