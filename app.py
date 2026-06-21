@@ -6,15 +6,27 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU TRADE AI DASHBOARD V2")
+st.title("🚀 MITU TRADE AI DASHBOARD V4")
 st.write("Paper trading scanner for Forex, Gold, Silver, Crypto, and Stocks")
 
-symbols = [
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X",
-    "GC=F", "SI=F",
-    "BTC-USD", "ETH-USD",
-    "AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META"
-]
+asset_type = st.selectbox(
+    "Choose Market",
+    ["ALL", "FOREX", "COMMODITIES", "CRYPTO", "STOCKS"]
+)
+
+market_symbols = {
+    "FOREX": ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
+    "COMMODITIES": ["GC=F", "SI=F"],
+    "CRYPTO": ["BTC-USD", "ETH-USD"],
+    "STOCKS": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META"]
+}
+
+if asset_type == "ALL":
+    symbols = []
+    for group in market_symbols.values():
+        symbols.extend(group)
+else:
+    symbols = market_symbols[asset_type]
 
 selected_signal = st.selectbox(
     "Choose Signal",
@@ -54,42 +66,38 @@ with st.spinner("Scanning market..."):
             trend = "UPTREND" if latest_ema20 > latest_ema50 else "DOWNTREND"
             macd_status = "BULLISH" if latest_macd > latest_macd_signal else "BEARISH"
 
-            score = 50
+            score = 0
 
             if trend == "UPTREND":
-                score += 20
-            else:
-                score -= 20
-
-            if 50 <= latest_rsi <= 65:
-                score += 20
-            elif 65 < latest_rsi <= 70:
-                score += 10
-            elif latest_rsi > 70:
-                score -= 20
-            elif latest_rsi < 35:
-                score -= 10
+                score += 35
 
             if macd_status == "BULLISH":
-                score += 20
-            else:
-                score -= 20
+                score += 35
 
-            if score >= 90:
+            if 45 <= latest_rsi <= 65:
+                score += 30
+            elif 35 <= latest_rsi < 45:
+                score += 20
+            elif 65 < latest_rsi <= 70:
+                score += 15
+            else:
+                score += 5
+
+            if score >= 85:
                 signal = "STRONG BUY"
                 confidence = "High"
             elif score >= 70:
                 signal = "BUY WATCH"
                 confidence = "Medium"
-            elif score <= 20:
-                signal = "STRONG SELL"
-                confidence = "High"
-            elif score <= 40:
+            elif score >= 45:
+                signal = "WAIT"
+                confidence = "Low"
+            elif score >= 30:
                 signal = "SELL WATCH"
                 confidence = "Medium"
             else:
-                signal = "WAIT"
-                confidence = "Low"
+                signal = "STRONG SELL"
+                confidence = "High"
 
             if "BUY" in signal:
                 entry = price
@@ -103,8 +111,8 @@ with st.spinner("Scanning market..."):
                 risk_reward = "1:2"
             else:
                 entry = price
-                stop_loss = None
-                take_profit = None
+                stop_loss = "N/A"
+                take_profit = "N/A"
                 risk_reward = "N/A"
 
             reason = ""
@@ -134,8 +142,8 @@ with st.spinner("Scanning market..."):
                 "Confidence": confidence,
                 "Score": score,
                 "Entry": round(entry, 5),
-                "Stop Loss": round(stop_loss, 5) if stop_loss else "N/A",
-                "Take Profit": round(take_profit, 5) if take_profit else "N/A",
+                "Stop Loss": round(stop_loss, 5) if stop_loss != "N/A" else "N/A",
+                "Take Profit": round(take_profit, 5) if take_profit != "N/A" else "N/A",
                 "Risk/Reward": risk_reward,
                 "Reason": reason
             })
@@ -171,9 +179,7 @@ st.success(
 
 st.subheader("🏆 Top 3 Opportunities")
 
-top3 = df.head(3)
-
-for _, row in top3.iterrows():
+for _, row in df.head(3).iterrows():
     message = (
         f"{row['Pair']} | {row['Signal']} | "
         f"Score: {row['Score']} | "
@@ -182,28 +188,26 @@ for _, row in top3.iterrows():
         f"TP: {row['Take Profit']}"
     )
 
-    if row["Score"] >= 90:
+    if row["Score"] >= 85:
         st.success("🟢 " + message)
-    elif row["Score"] >= 80:
-        st.info("🔵 " + message)
     elif row["Score"] >= 70:
         st.warning("🟡 " + message)
+    elif row["Score"] >= 45:
+        st.info("🔵 " + message)
     else:
         st.error("🔴 " + message)
 
 wins = len(df[df["Signal"] == "STRONG BUY"])
-losses = len(df[df["Signal"] == "STRONG SELL"])
+losses = len(df[df["Signal"].isin(["SELL WATCH", "STRONG SELL"])])
 total_trades = wins + losses
-
 win_rate = round((wins / total_trades) * 100, 1) if total_trades > 0 else 0
 
 st.subheader("📈 Performance Dashboard")
-
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Trades", total_trades)
-col2.metric("Wins", wins)
-col3.metric("Losses", losses)
-col4.metric("Win Rate %", win_rate)
+col1.metric("Signal Trades", total_trades)
+col2.metric("Strong Buy Count", wins)
+col3.metric("Sell Signal Count", losses)
+col4.metric("Signal Bias %", win_rate)
 
 st.subheader("📊 Market Scanner Results")
 
