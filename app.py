@@ -11,10 +11,10 @@ st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
 JOURNAL_FILE = "trade_journal.csv"
 
-st.title("🚀 MITU TRADE AI DASHBOARD V9")
-st.write("AI scanner with risk manager, position size calculator, journal, and backtest score")
+st.title("🚀 MITU TRADE AI DASHBOARD V10")
+st.write("AI scanner + risk manager + real paper trading account + equity curve")
 
-account_balance = st.number_input("Account Balance ($)", min_value=10.0, value=1000.0, step=100.0)
+account_balance = st.number_input("Starting Paper Account Balance ($)", min_value=10.0, value=1000.0, step=100.0)
 risk_percent = st.number_input("Risk Per Trade (%)", min_value=0.1, max_value=10.0, value=2.0, step=0.5)
 
 risk_amount = round(account_balance * (risk_percent / 100), 2)
@@ -165,7 +165,6 @@ with st.spinner("Scanning market..."):
                 position_size = round(risk_amount / risk_per_unit, 4) if risk_per_unit > 0 else 0
                 position_value = round(position_size * entry, 2)
             else:
-                risk_per_unit = 0
                 position_size = 0
                 position_value = 0
 
@@ -373,11 +372,7 @@ if os.path.exists(JOURNAL_FILE):
         open_trades = journal_for_close[journal_for_close["Status"] == "OPEN"]
 
         if not open_trades.empty:
-            open_index = st.selectbox(
-                "Choose open trade to close",
-                open_trades.index.tolist()
-            )
-
+            open_index = st.selectbox("Choose open trade to close", open_trades.index.tolist())
             selected_open_trade = journal_for_close.loc[open_index]
 
             st.write("Selected Trade:")
@@ -415,15 +410,94 @@ if os.path.exists(JOURNAL_FILE):
 else:
     st.info("No journal file yet. Open a trade first.")
 
+st.subheader("📒 Real Trade Journal + Paper Account")
+
+try:
+    journal = pd.read_csv(JOURNAL_FILE)
+    st.dataframe(journal, use_container_width=True)
+
+    total_journal_trades = len(journal)
+
+    if "Status" in journal.columns:
+        open_count = len(journal[journal["Status"] == "OPEN"])
+        closed_journal = journal[journal["Status"] == "CLOSED"].copy()
+    else:
+        open_count = 0
+        closed_journal = journal.copy()
+
+    closed_count = len(closed_journal)
+
+    if closed_count > 0 and "ProfitLoss" in closed_journal.columns:
+        closed_journal["ProfitLoss"] = pd.to_numeric(closed_journal["ProfitLoss"], errors="coerce").fillna(0)
+
+        total_profit = round(closed_journal["ProfitLoss"].sum(), 5)
+        journal_wins = len(closed_journal[closed_journal["ProfitLoss"] > 0])
+        journal_losses = len(closed_journal[closed_journal["ProfitLoss"] <= 0])
+        journal_win_rate = round((journal_wins / closed_count) * 100, 2)
+
+        best_real_trade = round(closed_journal["ProfitLoss"].max(), 5)
+        worst_real_trade = round(closed_journal["ProfitLoss"].min(), 5)
+
+        average_win = round(closed_journal[closed_journal["ProfitLoss"] > 0]["ProfitLoss"].mean(), 5) if journal_wins > 0 else 0
+        average_loss = round(closed_journal[closed_journal["ProfitLoss"] <= 0]["ProfitLoss"].mean(), 5) if journal_losses > 0 else 0
+
+        gross_profit = closed_journal[closed_journal["ProfitLoss"] > 0]["ProfitLoss"].sum()
+        gross_loss = abs(closed_journal[closed_journal["ProfitLoss"] < 0]["ProfitLoss"].sum())
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else "N/A"
+
+        closed_journal["Equity"] = account_balance + closed_journal["ProfitLoss"].cumsum()
+        current_balance = round(account_balance + total_profit, 2)
+    else:
+        total_profit = 0
+        journal_wins = 0
+        journal_losses = 0
+        journal_win_rate = 0
+        best_real_trade = 0
+        worst_real_trade = 0
+        average_win = 0
+        average_loss = 0
+        profit_factor = 0
+        current_balance = account_balance
+
+    st.subheader("💵 Paper Trading Account")
+
+    col_a1, col_a2, col_a3, col_a4 = st.columns(4)
+    col_a1.metric("Starting Balance", f"${account_balance}")
+    col_a2.metric("Current Balance", f"${current_balance}")
+    col_a3.metric("Total Profit/Loss", f"${total_profit}")
+    col_a4.metric("Real Win Rate %", journal_win_rate)
+
+    col16, col17, col18, col19 = st.columns(4)
+    col16.metric("Total Journal Trades", total_journal_trades)
+    col17.metric("Open Trades", open_count)
+    col18.metric("Closed Trades", closed_count)
+    col19.metric("Real Wins", journal_wins)
+
+    col20, col21, col22, col23 = st.columns(4)
+    col20.metric("Real Losses", journal_losses)
+    col21.metric("Best Trade", best_real_trade)
+    col22.metric("Worst Trade", worst_real_trade)
+    col23.metric("Profit Factor", profit_factor)
+
+    col24, col25 = st.columns(2)
+    col24.metric("Average Win", average_win)
+    col25.metric("Average Loss", average_loss)
+
+    if closed_count > 0:
+        st.subheader("📈 Real Equity Curve")
+        st.line_chart(closed_journal["Equity"])
+        st.subheader("📊 Closed Trades Analytics")
+        st.dataframe(closed_journal, use_container_width=True)
+
+except:
+    st.warning("No trade journal found yet.")
+
 strong_buy_count = len(df[df["Signal"] == "STRONG BUY"])
 buy_watch_count = len(df[df["Signal"] == "BUY WATCH"])
 sell_signal_count = len(df[df["Signal"].isin(["SELL WATCH", "STRONG SELL"])])
 total_signal_trades = strong_buy_count + buy_watch_count + sell_signal_count
 
-signal_bias = round(
-    ((strong_buy_count + buy_watch_count) / total_signal_trades) * 100, 1
-) if total_signal_trades > 0 else 0
-
+signal_bias = round(((strong_buy_count + buy_watch_count) / total_signal_trades) * 100, 1) if total_signal_trades > 0 else 0
 average_probability = round(df["Probability %"].mean(), 1)
 
 st.subheader("📈 Signal Dashboard")
@@ -493,45 +567,3 @@ df["Entry"] = df["Entry"].astype(str)
 st.dataframe(df, use_container_width=True)
 
 st.warning("Paper trading only. Do not use real money yet.")
-
-st.subheader("📒 Real Trade Journal")
-
-try:
-    journal = pd.read_csv(JOURNAL_FILE)
-    st.dataframe(journal, use_container_width=True)
-
-    total_journal_trades = len(journal)
-
-    if "Status" in journal.columns:
-        open_count = len(journal[journal["Status"] == "OPEN"])
-        closed_journal = journal[journal["Status"] == "CLOSED"]
-    else:
-        open_count = 0
-        closed_journal = journal
-
-    closed_count = len(closed_journal)
-
-    if closed_count > 0 and "ProfitLoss" in closed_journal.columns:
-        total_profit = closed_journal["ProfitLoss"].sum()
-        journal_wins = len(closed_journal[closed_journal["ProfitLoss"] > 0])
-        journal_losses = len(closed_journal[closed_journal["ProfitLoss"] <= 0])
-        journal_win_rate = round((journal_wins / closed_count) * 100, 2)
-    else:
-        total_profit = 0
-        journal_wins = 0
-        journal_losses = 0
-        journal_win_rate = 0
-
-    col16, col17, col18, col19 = st.columns(4)
-    col16.metric("Total Journal Trades", total_journal_trades)
-    col17.metric("Open Trades", open_count)
-    col18.metric("Closed Trades", closed_count)
-    col19.metric("Real Win Rate %", journal_win_rate)
-
-    col20, col21, col22 = st.columns(3)
-    col20.metric("Real Wins", journal_wins)
-    col21.metric("Real Losses", journal_losses)
-    col22.metric("Real Total Profit", round(total_profit, 5))
-
-except:
-    st.warning("No trade journal found yet.")
