@@ -9,8 +9,8 @@ from ta.trend import EMAIndicator, MACD
 
 st.set_page_config(page_title="MITU FOREX AI", layout="wide")
 
-st.title("🚀 MITU TRADE AI DASHBOARD V6")
-st.write("Paper trading AI scanner with journal save button, risk level, probability, and AI grade")
+st.title("🚀 MITU TRADE AI DASHBOARD V7")
+st.write("Paper trading AI scanner with journal, risk, probability, AI grade, and basic backtest")
 
 asset_type = st.selectbox(
     "Choose Market",
@@ -42,13 +42,14 @@ if st.button("🔄 Refresh Market Data"):
     st.rerun()
 
 results = []
+backtest_rows = []
 
 with st.spinner("Scanning market..."):
     for symbol in symbols:
         try:
             data = yf.download(symbol, period="5d", interval="5m", progress=False)
 
-            if data.empty or len(data) < 60:
+            if data.empty or len(data) < 80:
                 continue
 
             close = data["Close"].squeeze()
@@ -93,6 +94,7 @@ with st.spinner("Scanning market..."):
                 score += 10
 
             score = min(score, 100)
+
             probability = round((score * 0.8) + 10, 1)
             probability = min(probability, 95)
 
@@ -195,10 +197,40 @@ with st.spinner("Scanning market..."):
                 "Reason": reason
             })
 
+            old_price = float(close.iloc[-20])
+            new_price = float(close.iloc[-1])
+            price_change = round(((new_price - old_price) / old_price) * 100, 2)
+
+            if score >= 85 and price_change > 0:
+                backtest_result = "WIN"
+                backtest_profit = 1
+            elif score >= 85 and price_change <= 0:
+                backtest_result = "LOSS"
+                backtest_profit = -1
+            elif score <= 30 and price_change < 0:
+                backtest_result = "WIN"
+                backtest_profit = 1
+            elif score <= 30 and price_change >= 0:
+                backtest_result = "LOSS"
+                backtest_profit = -1
+            else:
+                backtest_result = "NO TRADE"
+                backtest_profit = 0
+
+            backtest_rows.append({
+                "Pair": symbol,
+                "Past 20 Candle Move %": price_change,
+                "Signal": signal,
+                "Score": score,
+                "Backtest Result": backtest_result,
+                "Backtest Profit Point": backtest_profit
+            })
+
         except Exception as e:
             st.write(f"Skipped {symbol}: {e}")
 
 df = pd.DataFrame(results)
+backtest_df = pd.DataFrame(backtest_rows)
 
 st.write("Total symbols in list:", len(symbols))
 st.write("Total results found:", len(results))
@@ -321,6 +353,31 @@ col9.metric("Bullish Markets", bullish_count)
 col10.metric("Bearish Markets", bearish_count)
 col11.metric("Neutral / Mixed", neutral_count)
 
+st.subheader("🧪 Basic Backtest Panel")
+
+if not backtest_df.empty:
+    backtest_trades = backtest_df[backtest_df["Backtest Result"] != "NO TRADE"]
+    backtest_total = len(backtest_trades)
+    backtest_wins = len(backtest_trades[backtest_trades["Backtest Result"] == "WIN"])
+    backtest_losses = len(backtest_trades[backtest_trades["Backtest Result"] == "LOSS"])
+    backtest_accuracy = round((backtest_wins / backtest_total) * 100, 1) if backtest_total > 0 else 0
+    backtest_profit = backtest_trades["Backtest Profit Point"].sum() if backtest_total > 0 else 0
+
+    col12, col13, col14, col15 = st.columns(4)
+    col12.metric("Backtest Trades", backtest_total)
+    col13.metric("Backtest Wins", backtest_wins)
+    col14.metric("Backtest Losses", backtest_losses)
+    col15.metric("Backtest Accuracy %", backtest_accuracy)
+
+    st.metric("Backtest Profit Points", backtest_profit)
+
+    backtest_df["Equity Curve"] = backtest_df["Backtest Profit Point"].cumsum()
+
+    st.line_chart(backtest_df["Equity Curve"])
+    st.dataframe(backtest_df, use_container_width=True)
+else:
+    st.warning("No backtest data found.")
+
 st.subheader("📊 Market Scanner Results")
 
 df["Stop Loss"] = df["Stop Loss"].astype(str)
@@ -338,8 +395,6 @@ try:
     st.dataframe(journal, use_container_width=True)
 
     total_journal_trades = len(journal)
-
-    closed_journal = journal[journal["Status"] == "CLOSED"] if "Status" in journal.columns else journal
 
     if "ProfitLoss" in journal.columns:
         total_profit = journal["ProfitLoss"].sum()
