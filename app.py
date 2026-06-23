@@ -7,28 +7,19 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator, MACD
 
-st.set_page_config(page_title="MITU FOREX AI", layout="wide")
+st.set_page_config(page_title="MITU TRADE AI", layout="wide")
 
 JOURNAL_FILE = "trade_journal.csv"
 
-st.title("🚀 MITU TRADE AI DASHBOARD V10")
-st.write("AI scanner + risk manager + real paper trading account + equity curve")
+st.title("🚀 MITU TRADE AI DASHBOARD V12")
+st.write("Professional Paper Trading Platform: market-separated scanner, paper account, journal, equity curve")
 
 account_balance = st.number_input("Starting Paper Account Balance ($)", min_value=10.0, value=1000.0, step=100.0)
 risk_percent = st.number_input("Risk Per Trade (%)", min_value=0.1, max_value=10.0, value=2.0, step=0.5)
-
 risk_amount = round(account_balance * (risk_percent / 100), 2)
 
-asset_type = st.selectbox(
-    "Choose Market",
-    ["ALL", "FOREX", "COMMODITIES", "CRYPTO", "STOCKS"]
-)
-
-selected_signal = st.selectbox(
-    "Choose Signal",
-    ["ALL", "STRONG BUY", "BUY WATCH", "WAIT", "SELL WATCH", "STRONG SELL"]
-)
-
+market_filter = st.selectbox("Choose Market View", ["ALL", "FOREX", "COMMODITIES", "CRYPTO", "STOCKS"])
+selected_signal = st.selectbox("Choose Signal", ["ALL", "STRONG BUY", "BUY WATCH", "WAIT", "SELL WATCH", "STRONG SELL"])
 show_only_top = st.checkbox("Show only strong opportunities", value=False)
 
 market_symbols = {
@@ -38,15 +29,30 @@ market_symbols = {
     "STOCKS": ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META"]
 }
 
-if asset_type == "ALL":
+if market_filter == "ALL":
     symbols = []
     for group in market_symbols.values():
         symbols.extend(group)
 else:
-    symbols = market_symbols[asset_type]
+    symbols = market_symbols[market_filter]
 
 if st.button("🔄 Refresh Market Data"):
     st.rerun()
+
+def get_market_name(symbol):
+    for market_name, symbol_list in market_symbols.items():
+        if symbol in symbol_list:
+            return market_name
+    return "UNKNOWN"
+
+def position_note(symbol):
+    if symbol.endswith("=X"):
+        return "Forex units estimate"
+    if symbol in ["BTC-USD", "ETH-USD"]:
+        return "Crypto coin amount"
+    if symbol in ["GC=F", "SI=F"]:
+        return "Commodity units estimate"
+    return "Stock shares estimate"
 
 results = []
 backtest_rows = []
@@ -80,10 +86,8 @@ with st.spinner("Scanning market..."):
             macd_status = "BULLISH" if latest_macd > latest_macd_signal else "BEARISH"
 
             score = 0
-
             if trend == "UPTREND":
                 score += 35
-
             if macd_status == "BULLISH":
                 score += 35
 
@@ -101,9 +105,7 @@ with st.spinner("Scanning market..."):
                 score += 10
 
             score = min(score, 100)
-
-            probability = round((score * 0.8) + 10, 1)
-            probability = min(probability, 95)
+            probability = min(round((score * 0.8) + 10, 1), 95)
 
             if score >= 85:
                 signal = "STRONG BUY"
@@ -162,46 +164,22 @@ with st.spinner("Scanning market..."):
 
             if stop_loss != "N/A":
                 risk_per_unit = abs(entry - stop_loss)
-                position_size = round(risk_amount / risk_per_unit, 4) if risk_per_unit > 0 else 0
-                position_value = round(position_size * entry, 2)
+                pos_size = round(risk_amount / risk_per_unit, 4) if risk_per_unit > 0 else 0
+                pos_value = round(pos_size * entry, 2)
             else:
-                position_size = 0
-                position_value = 0
-
-            if symbol.endswith("=X"):
-                position_note = "Forex units estimate"
-            elif symbol in ["BTC-USD", "ETH-USD"]:
-                position_note = "Crypto coin amount"
-            elif symbol in ["GC=F", "SI=F"]:
-                position_note = "Commodity units estimate"
-            else:
-                position_note = "Stock shares estimate"
+                pos_size = 0
+                pos_value = 0
 
             reason = ""
+            reason += "EMA trend bullish. " if trend == "UPTREND" else "EMA trend bearish. "
+            reason += "MACD bullish. " if macd_status == "BULLISH" else "MACD bearish. "
+            reason += "RSI not overbought. " if latest_rsi < 70 else "RSI overbought caution. "
+            reason += "High quality setup. " if score >= 85 else "Good watch setup. " if score >= 70 else "Weak or neutral setup. "
 
-            if trend == "UPTREND":
-                reason += "EMA trend bullish. "
-            else:
-                reason += "EMA trend bearish. "
-
-            if macd_status == "BULLISH":
-                reason += "MACD bullish. "
-            else:
-                reason += "MACD bearish. "
-
-            if latest_rsi < 70:
-                reason += "RSI not overbought. "
-            else:
-                reason += "RSI overbought caution. "
-
-            if score >= 85:
-                reason += "High quality setup. "
-            elif score >= 70:
-                reason += "Good watch setup. "
-            else:
-                reason += "Weak or neutral setup. "
+            market_name = get_market_name(symbol)
 
             results.append({
+                "Market": market_name,
                 "Pair": symbol,
                 "Price": round(price, 5),
                 "RSI": round(latest_rsi, 2),
@@ -219,9 +197,9 @@ with st.spinner("Scanning market..."):
                 "Take Profit": round(take_profit, 5) if take_profit != "N/A" else "N/A",
                 "Risk/Reward": risk_reward,
                 "Risk Amount $": risk_amount,
-                "Position Size": position_size,
-                "Position Value $": position_value,
-                "Position Note": position_note,
+                "Position Size": pos_size,
+                "Position Value $": pos_value,
+                "Position Note": position_note(symbol),
                 "Reason": reason
             })
 
@@ -246,6 +224,7 @@ with st.spinner("Scanning market..."):
                 backtest_profit = 0
 
             backtest_rows.append({
+                "Market": market_name,
                 "Pair": symbol,
                 "Past 20 Candle Move %": price_change,
                 "Signal": signal,
@@ -280,11 +259,10 @@ if df.empty:
 df = df.sort_values(by=["Score", "Probability %"], ascending=False)
 best_trade = df.iloc[0]
 
-st.subheader("🔥 Professional Best Trade Card")
-
+st.subheader("🔥 Overall Best Trade")
 st.success(
     f"""
-BEST TRADE NOW: {best_trade['Pair']}
+BEST TRADE NOW: {best_trade['Pair']} ({best_trade['Market']})
 
 Signal: {best_trade['Signal']}  
 Type: {best_trade['Type']}  
@@ -304,36 +282,69 @@ Position Value: ${best_trade['Position Value $']}
 """
 )
 
-st.subheader("🏆 Top 3 Opportunities")
+st.subheader("🏆 Best Trade by Market")
+market_cards = ["FOREX", "COMMODITIES", "CRYPTO", "STOCKS"]
+card_cols = st.columns(4)
 
-for _, row in df.head(3).iterrows():
-    message = (
-        f"{row['Pair']} | {row['Signal']} | "
-        f"Score: {row['Score']} | "
-        f"Probability: {row['Probability %']}% | "
-        f"Grade: {row['AI Grade']} | "
-        f"Risk: {row['Risk Level']} | "
-        f"Entry: {row['Entry']} | "
-        f"SL: {row['Stop Loss']} | "
-        f"TP: {row['Take Profit']} | "
-        f"Size: {row['Position Size']}"
-    )
+for i, market_name in enumerate(market_cards):
+    market_df = df[df["Market"] == market_name].sort_values(by=["Score", "Probability %"], ascending=False)
 
-    if row["Score"] >= 85:
-        st.success("🟢 " + message)
-    elif row["Score"] >= 70:
-        st.warning("🟡 " + message)
-    elif row["Score"] >= 45:
-        st.info("🔵 " + message)
-    else:
-        st.error("🔴 " + message)
+    with card_cols[i]:
+        st.write(f"### {market_name}")
+
+        if not market_df.empty:
+            row = market_df.iloc[0]
+            st.success(
+                f"""
+{row['Pair']}
+
+{row['Signal']}  
+Score: {row['Score']}  
+Probability: {row['Probability %']}%  
+Grade: {row['AI Grade']}  
+Risk: {row['Risk Level']}
+"""
+            )
+        else:
+            st.info("No signal")
+
+st.subheader("🏆 Top 3 Opportunities by Market")
+
+for market_name in market_cards:
+    market_df = df[df["Market"] == market_name].sort_values(by=["Score", "Probability %"], ascending=False)
+
+    if not market_df.empty:
+        st.write(f"### {market_name} Top 3")
+
+        for _, row in market_df.head(3).iterrows():
+            message = (
+                f"{row['Pair']} | {row['Signal']} | "
+                f"Score: {row['Score']} | "
+                f"Probability: {row['Probability %']}% | "
+                f"Grade: {row['AI Grade']} | "
+                f"Risk: {row['Risk Level']} | "
+                f"Entry: {row['Entry']} | "
+                f"SL: {row['Stop Loss']} | "
+                f"TP: {row['Take Profit']} | "
+                f"Size: {row['Position Size']}"
+            )
+
+            if row["Score"] >= 85:
+                st.success("🟢 " + message)
+            elif row["Score"] >= 70:
+                st.warning("🟡 " + message)
+            elif row["Score"] >= 45:
+                st.info("🔵 " + message)
+            else:
+                st.error("🔴 " + message)
 
 st.subheader("💾 Open Best Trade in Journal")
 
-if st.button("Open Best Trade"):
+if st.button("Open Overall Best Trade"):
     new_trade = pd.DataFrame([{
         "Open Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "Close Date": "",
+        "Market": best_trade["Market"],
         "Pair": best_trade["Pair"],
         "Type": best_trade["Type"],
         "Entry": best_trade["Entry"],
@@ -431,15 +442,15 @@ try:
         closed_journal["ProfitLoss"] = pd.to_numeric(closed_journal["ProfitLoss"], errors="coerce").fillna(0)
 
         total_profit = round(closed_journal["ProfitLoss"].sum(), 5)
-        journal_wins = len(closed_journal[closed_journal["ProfitLoss"] > 0])
-        journal_losses = len(closed_journal[closed_journal["ProfitLoss"] <= 0])
-        journal_win_rate = round((journal_wins / closed_count) * 100, 2)
+        wins = len(closed_journal[closed_journal["ProfitLoss"] > 0])
+        losses = len(closed_journal[closed_journal["ProfitLoss"] <= 0])
+        win_rate = round((wins / closed_count) * 100, 2)
 
         best_real_trade = round(closed_journal["ProfitLoss"].max(), 5)
         worst_real_trade = round(closed_journal["ProfitLoss"].min(), 5)
 
-        average_win = round(closed_journal[closed_journal["ProfitLoss"] > 0]["ProfitLoss"].mean(), 5) if journal_wins > 0 else 0
-        average_loss = round(closed_journal[closed_journal["ProfitLoss"] <= 0]["ProfitLoss"].mean(), 5) if journal_losses > 0 else 0
+        average_win = round(closed_journal[closed_journal["ProfitLoss"] > 0]["ProfitLoss"].mean(), 5) if wins > 0 else 0
+        average_loss = round(closed_journal[closed_journal["ProfitLoss"] <= 0]["ProfitLoss"].mean(), 5) if losses > 0 else 0
 
         gross_profit = closed_journal[closed_journal["ProfitLoss"] > 0]["ProfitLoss"].sum()
         gross_loss = abs(closed_journal[closed_journal["ProfitLoss"] < 0]["ProfitLoss"].sum())
@@ -449,9 +460,9 @@ try:
         current_balance = round(account_balance + total_profit, 2)
     else:
         total_profit = 0
-        journal_wins = 0
-        journal_losses = 0
-        journal_win_rate = 0
+        wins = 0
+        losses = 0
+        win_rate = 0
         best_real_trade = 0
         worst_real_trade = 0
         average_win = 0
@@ -460,78 +471,94 @@ try:
         current_balance = account_balance
 
     st.subheader("💵 Paper Trading Account")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Starting Balance", f"${account_balance}")
+    c2.metric("Current Balance", f"${current_balance}")
+    c3.metric("Total Profit/Loss", f"${total_profit}")
+    c4.metric("Real Win Rate %", win_rate)
 
-    col_a1, col_a2, col_a3, col_a4 = st.columns(4)
-    col_a1.metric("Starting Balance", f"${account_balance}")
-    col_a2.metric("Current Balance", f"${current_balance}")
-    col_a3.metric("Total Profit/Loss", f"${total_profit}")
-    col_a4.metric("Real Win Rate %", journal_win_rate)
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Total Journal Trades", total_journal_trades)
+    c6.metric("Open Trades", open_count)
+    c7.metric("Closed Trades", closed_count)
+    c8.metric("Real Wins", wins)
 
-    col16, col17, col18, col19 = st.columns(4)
-    col16.metric("Total Journal Trades", total_journal_trades)
-    col17.metric("Open Trades", open_count)
-    col18.metric("Closed Trades", closed_count)
-    col19.metric("Real Wins", journal_wins)
+    c9, c10, c11, c12 = st.columns(4)
+    c9.metric("Real Losses", losses)
+    c10.metric("Best Trade", best_real_trade)
+    c11.metric("Worst Trade", worst_real_trade)
+    c12.metric("Profit Factor", profit_factor)
 
-    col20, col21, col22, col23 = st.columns(4)
-    col20.metric("Real Losses", journal_losses)
-    col21.metric("Best Trade", best_real_trade)
-    col22.metric("Worst Trade", worst_real_trade)
-    col23.metric("Profit Factor", profit_factor)
-
-    col24, col25 = st.columns(2)
-    col24.metric("Average Win", average_win)
-    col25.metric("Average Loss", average_loss)
+    c13, c14 = st.columns(2)
+    c13.metric("Average Win", average_win)
+    c14.metric("Average Loss", average_loss)
 
     if closed_count > 0:
         st.subheader("📈 Real Equity Curve")
         st.line_chart(closed_journal["Equity"])
+
+        st.subheader("📊 Win Rate by Market")
+
+        if "Market" in closed_journal.columns:
+            market_summary = closed_journal.groupby("Market").agg(
+                Trades=("ProfitLoss", "count"),
+                Wins=("ProfitLoss", lambda x: (x > 0).sum()),
+                Losses=("ProfitLoss", lambda x: (x <= 0).sum()),
+                Total_Profit=("ProfitLoss", "sum")
+            ).reset_index()
+
+            market_summary["Win Rate %"] = round((market_summary["Wins"] / market_summary["Trades"]) * 100, 2)
+            st.dataframe(market_summary, use_container_width=True)
+
         st.subheader("📊 Closed Trades Analytics")
         st.dataframe(closed_journal, use_container_width=True)
 
 except:
     st.warning("No trade journal found yet.")
 
+st.subheader("📈 Signal Dashboard")
+
 strong_buy_count = len(df[df["Signal"] == "STRONG BUY"])
 buy_watch_count = len(df[df["Signal"] == "BUY WATCH"])
 sell_signal_count = len(df[df["Signal"].isin(["SELL WATCH", "STRONG SELL"])])
 total_signal_trades = strong_buy_count + buy_watch_count + sell_signal_count
-
 signal_bias = round(((strong_buy_count + buy_watch_count) / total_signal_trades) * 100, 1) if total_signal_trades > 0 else 0
 average_probability = round(df["Probability %"].mean(), 1)
 
-st.subheader("📈 Signal Dashboard")
+s1, s2, s3, s4 = st.columns(4)
+s1.metric("Signal Trades", total_signal_trades)
+s2.metric("Strong Buy", strong_buy_count)
+s3.metric("Sell Signals", sell_signal_count)
+s4.metric("Avg Probability %", average_probability)
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Signal Trades", total_signal_trades)
-col2.metric("Strong Buy", strong_buy_count)
-col3.metric("Sell Signals", sell_signal_count)
-col4.metric("Avg Probability %", average_probability)
-
-col5, col6, col7, col8 = st.columns(4)
-col5.metric("Buy Watch", buy_watch_count)
-col6.metric("Signal Bias %", signal_bias)
-col7.metric("Best Score", int(df["Score"].max()))
-col8.metric("Best Grade", best_trade["AI Grade"])
+s5, s6, s7, s8 = st.columns(4)
+s5.metric("Buy Watch", buy_watch_count)
+s6.metric("Signal Bias %", signal_bias)
+s7.metric("Best Score", int(df["Score"].max()))
+s8.metric("Best Grade", best_trade["AI Grade"])
 
 st.subheader("💰 Risk Manager")
 
-col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-col_r1.metric("Account Balance", f"${account_balance}")
-col_r2.metric("Risk Per Trade", f"{risk_percent}%")
-col_r3.metric("Risk Amount", f"${risk_amount}")
-col_r4.metric("Best Trade Size", best_trade["Position Size"])
+r1, r2, r3, r4 = st.columns(4)
+r1.metric("Account Balance", f"${account_balance}")
+r2.metric("Risk Per Trade", f"{risk_percent}%")
+r3.metric("Risk Amount", f"${risk_amount}")
+r4.metric("Best Trade Size", best_trade["Position Size"])
 
 st.subheader("🧠 Market Direction Panel")
 
-bullish_count = len(df[(df["Trend"] == "UPTREND") & (df["MACD"] == "BULLISH")])
-bearish_count = len(df[(df["Trend"] == "DOWNTREND") & (df["MACD"] == "BEARISH")])
-neutral_count = len(df) - bullish_count - bearish_count
+for market_name in market_cards:
+    market_df = df[df["Market"] == market_name]
 
-col9, col10, col11 = st.columns(3)
-col9.metric("Bullish Markets", bullish_count)
-col10.metric("Bearish Markets", bearish_count)
-col11.metric("Neutral / Mixed", neutral_count)
+    bullish_count = len(market_df[(market_df["Trend"] == "UPTREND") & (market_df["MACD"] == "BULLISH")])
+    bearish_count = len(market_df[(market_df["Trend"] == "DOWNTREND") & (market_df["MACD"] == "BEARISH")])
+    neutral_count = len(market_df) - bullish_count - bearish_count
+
+    st.write(f"### {market_name}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Bullish", bullish_count)
+    m2.metric("Bearish", bearish_count)
+    m3.metric("Neutral / Mixed", neutral_count)
 
 st.subheader("🧪 Basic Backtest Score Panel")
 
@@ -543,16 +570,15 @@ if not backtest_df.empty:
     backtest_score = round((backtest_wins / backtest_total) * 100, 1) if backtest_total > 0 else 0
     backtest_profit = backtest_trades["Backtest Profit Point"].sum() if backtest_total > 0 else 0
 
-    col12, col13, col14, col15 = st.columns(4)
-    col12.metric("Backtest Trades", backtest_total)
-    col13.metric("Backtest Wins", backtest_wins)
-    col14.metric("Backtest Losses", backtest_losses)
-    col15.metric("Backtest Score %", backtest_score)
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Backtest Trades", backtest_total)
+    b2.metric("Backtest Wins", backtest_wins)
+    b3.metric("Backtest Losses", backtest_losses)
+    b4.metric("Backtest Score %", backtest_score)
 
     st.metric("Backtest Profit Points", backtest_profit)
 
     backtest_df["Equity Curve"] = backtest_df["Backtest Profit Point"].cumsum()
-
     st.line_chart(backtest_df["Equity Curve"])
     st.dataframe(backtest_df, use_container_width=True)
 else:
