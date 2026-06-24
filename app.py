@@ -11,8 +11,8 @@ st.set_page_config(page_title="MITU TRADE AI", layout="wide")
 
 JOURNAL_FILE = "trade_journal.csv"
 
-st.title("🚀 MITU TRADE AI DASHBOARD V12")
-st.write("Professional Paper Trading Platform: market-separated scanner, paper account, journal, equity curve")
+st.title("🚀 MITU TRADE AI PROFESSIONAL TERMINAL V13")
+st.write("Professional AI analyst layer: market-separated scanner, confidence stars, ranking, journal, paper account, and equity curve")
 
 account_balance = st.number_input("Starting Paper Account Balance ($)", min_value=10.0, value=1000.0, step=100.0)
 risk_percent = st.number_input("Risk Per Trade (%)", min_value=0.1, max_value=10.0, value=2.0, step=0.5)
@@ -53,6 +53,32 @@ def position_note(symbol):
     if symbol in ["GC=F", "SI=F"]:
         return "Commodity units estimate"
     return "Stock shares estimate"
+
+
+def confidence_stars(score):
+    if score >= 95:
+        return "⭐⭐⭐⭐⭐"
+    elif score >= 85:
+        return "⭐⭐⭐⭐"
+    elif score >= 75:
+        return "⭐⭐⭐"
+    elif score >= 65:
+        return "⭐⭐"
+    else:
+        return "⭐"
+
+def analyst_verdict(signal, score, risk_level):
+    if signal == "STRONG BUY" and score >= 85 and risk_level != "High":
+        return "High-quality setup for paper trading watchlist."
+    elif signal == "STRONG BUY":
+        return "Strong setup, but check risk and chart before paper trading."
+    elif signal == "BUY WATCH":
+        return "Good watchlist setup. Wait for confirmation."
+    elif signal == "WAIT":
+        return "Neutral setup. No rush to trade."
+    elif signal in ["SELL WATCH", "STRONG SELL"]:
+        return "Bearish setup. Only paper trade if your rules allow short/sell setups."
+    return "No clear edge."
 
 results = []
 backtest_rows = []
@@ -191,6 +217,7 @@ with st.spinner("Scanning market..."):
                 "Score": score,
                 "Probability %": probability,
                 "AI Grade": ai_grade,
+                "Confidence Stars": confidence_stars(score),
                 "Risk Level": risk_level,
                 "Entry": round(entry, 5),
                 "Stop Loss": round(stop_loss, 5) if stop_loss != "N/A" else "N/A",
@@ -269,6 +296,7 @@ Type: {best_trade['Type']}
 Score: {best_trade['Score']}  
 Probability: {best_trade['Probability %']}%  
 AI Grade: {best_trade['AI Grade']}  
+Confidence: {best_trade['Confidence Stars']}  
 Risk Level: {best_trade['Risk Level']}  
 
 Entry: {best_trade['Entry']}  
@@ -279,6 +307,26 @@ Risk/Reward: {best_trade['Risk/Reward']}
 Risk Amount: ${best_trade['Risk Amount $']}  
 Position Size: {best_trade['Position Size']}  
 Position Value: ${best_trade['Position Value $']}  
+"""
+)
+
+st.subheader("🧠 AI Analyst Explanation")
+
+st.info(
+    f"""
+PAIR: {best_trade['Pair']} ({best_trade['Market']})
+
+FINAL VERDICT: {analyst_verdict(best_trade['Signal'], best_trade['Score'], best_trade['Risk Level'])}
+
+Signal: {best_trade['Signal']}  
+Score: {best_trade['Score']}  
+Probability: {best_trade['Probability %']}%  
+AI Grade: {best_trade['AI Grade']}  
+Confidence Stars: {best_trade['Confidence Stars']}  
+Risk Level: {best_trade['Risk Level']}  
+
+Technical Reason:
+{best_trade['Reason']}
 """
 )
 
@@ -302,6 +350,7 @@ for i, market_name in enumerate(market_cards):
 Score: {row['Score']}  
 Probability: {row['Probability %']}%  
 Grade: {row['AI Grade']}  
+Stars: {row['Confidence Stars']}  
 Risk: {row['Risk Level']}
 """
             )
@@ -322,6 +371,7 @@ for market_name in market_cards:
                 f"Score: {row['Score']} | "
                 f"Probability: {row['Probability %']}% | "
                 f"Grade: {row['AI Grade']} | "
+                f"Stars: {row['Confidence Stars']} | "
                 f"Risk: {row['Risk Level']} | "
                 f"Entry: {row['Entry']} | "
                 f"SL: {row['Stop Loss']} | "
@@ -354,6 +404,7 @@ if st.button("Open Overall Best Trade"):
         "Score": best_trade["Score"],
         "Probability %": best_trade["Probability %"],
         "AI Grade": best_trade["AI Grade"],
+        "Confidence Stars": best_trade["Confidence Stars"],
         "Risk Level": best_trade["Risk Level"],
         "Risk Amount $": best_trade["Risk Amount $"],
         "Position Size": best_trade["Position Size"],
@@ -427,6 +478,13 @@ try:
     journal = pd.read_csv(JOURNAL_FILE)
     st.dataframe(journal, use_container_width=True)
 
+    st.download_button(
+        "⬇️ Download Trade Journal CSV",
+        journal.to_csv(index=False),
+        "trade_journal_v13.csv",
+        "text/csv"
+    )
+
     total_journal_trades = len(journal)
 
     if "Status" in journal.columns:
@@ -492,6 +550,27 @@ try:
     c13, c14 = st.columns(2)
     c13.metric("Average Win", average_win)
     c14.metric("Average Loss", average_loss)
+
+    st.subheader("📅 Daily Performance")
+
+    if "Close Date" in closed_journal.columns and closed_count > 0:
+        temp_daily = closed_journal.copy()
+        temp_daily["Close Date"] = pd.to_datetime(temp_daily["Close Date"], errors="coerce")
+        temp_daily = temp_daily.dropna(subset=["Close Date"])
+        if not temp_daily.empty:
+            temp_daily["Day"] = temp_daily["Close Date"].dt.date
+            daily_summary = temp_daily.groupby("Day").agg(
+                Trades=("ProfitLoss", "count"),
+                Wins=("ProfitLoss", lambda x: (x > 0).sum()),
+                Losses=("ProfitLoss", lambda x: (x <= 0).sum()),
+                Profit=("ProfitLoss", "sum")
+            ).reset_index()
+            daily_summary["Win Rate %"] = round((daily_summary["Wins"] / daily_summary["Trades"]) * 100, 2)
+            st.dataframe(daily_summary, use_container_width=True)
+        else:
+            st.info("No closed trades with close dates yet.")
+    else:
+        st.info("Close trades to see daily performance.")
 
     if closed_count > 0:
         st.subheader("📈 Real Equity Curve")
@@ -583,6 +662,28 @@ if not backtest_df.empty:
     st.dataframe(backtest_df, use_container_width=True)
 else:
     st.warning("No backtest data found.")
+
+st.subheader("📌 Market Strength Ranking")
+
+ranking_df = df[[
+    "Market",
+    "Pair",
+    "Signal",
+    "Score",
+    "Probability %",
+    "AI Grade",
+    "Confidence Stars",
+    "Risk Level"
+]].sort_values(by=["Score", "Probability %"], ascending=False)
+
+st.dataframe(ranking_df, use_container_width=True)
+
+st.download_button(
+    "⬇️ Download Scanner Results CSV",
+    df.to_csv(index=False),
+    "mitu_trade_ai_scanner_v13.csv",
+    "text/csv"
+)
 
 st.subheader("📊 Market Scanner Results")
 
